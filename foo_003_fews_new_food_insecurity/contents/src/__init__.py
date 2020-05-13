@@ -41,9 +41,9 @@ TIME_FIELD = 'start_date'
 UID_FIELD = '_uid'
 
 LOG_LEVEL = logging.INFO
-MAXROWS = 10000
+MAXROWS = 1000000
 MINDATES = 6
-MAXAGE = datetime.datetime.today() - datetime.timedelta(days=365*3)
+MAXAGE = datetime.datetime.today() - datetime.timedelta(days=365*5)
 DATASET_ID = 'ac6dcdb3-2beb-4c66-9f83-565c16c2c914'
 def lastUpdateDate(dataset, date):
    apiUrl = 'http://api.resourcewatch.org/v1/dataset/{0}'.format(dataset)
@@ -84,7 +84,7 @@ def findShps(zfile):
                 elif 'ML2' in f:
                     files['ML2'] = f
     if len(files) != 3:
-        logging.error('There should be 3 shapefiles: CS, ML1, ML2')
+        logging.info('There should be 3 shapefiles: CS, ML1, ML2')
     return files
 
 

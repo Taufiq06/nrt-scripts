@@ -163,31 +163,31 @@ def cleanOldRows(table, time_field, max_age, date_format='%Y-%m-%d %H:%M:%S'):
 
     return(num_expired)
 
-def fetchDataFileName(SOURCE_URL):
+def fetchDataFileName(url):
     ''' 
     Get the filename from source url for which we want to download data
-    INPUT   SOURCE_URL: source url to download data (string)
+    INPUT   url: source url to download data (string)
     RETURN  filename: filename for source data (string)
     '''  
     # pull website content from the source url where data for Greenland ice mass is stored
-    r = requests.get(SOURCE_URL, auth=HTTPBasicAuth(EARTHDATA_USER, EARTHDATA_KEY), stream=True)
+    r = requests.get(url, auth=HTTPBasicAuth(EARTHDATA_USER, EARTHDATA_KEY), stream=True)
     # use BeautifulSoup to read the content as a nested data structure
     soup = BeautifulSoup(r.text, 'html.parser')
     # create a boolean variable which will be set to "True" once the desired file is found
-    ALREADY_FOUND = False
+    already_found = False
 
     # extract all the <a> tags within the html content. The <a> tags are used to mark links, so 
     # we will be able to find the files available for download marked with these tags.
     for item in soup.findAll('a'):
         # if one of the links available to download is a text file & contains the word 'greenland_mass'
         if item['href'].endswith(".txt") and 'greenland_mass' in item['href']:
-            if ALREADY_FOUND:
+            if already_found:
                 logging.warning("There are multiple filenames which match criteria, passing most recent")
             # get the filename    
             filename = item['href'].split('/')[-1]
             # set this variable to "True" since we found the desired file
-            ALREADY_FOUND = True
-    if ALREADY_FOUND:
+            already_found = True
+    if already_found:
         # if successful, log that the filename was found successfully
         logging.info("Selected filename: {}".format(filename))
     else:
@@ -199,7 +199,7 @@ def fetchDataFileName(SOURCE_URL):
 def deleteExcessRows(table, max_rows, time_field):
     ''' 
     Delete rows to bring count down to max_rows
-    INPUT   table: name of table in Carto where we will upload the data (string)
+    INPUT   table: name of table in Carto from which we will delete excess rows (string)
             max_rows: maximum rows that can be stored in the Carto table (integer)
             time_field: column that stores datetime information (string) 
     RETURN  num_dropped: number of rows that have been dropped from the table (integer)
@@ -208,7 +208,7 @@ def deleteExcessRows(table, max_rows, time_field):
     num_dropped = 0
     # get cartodb_ids from carto table sorted by date (new->old)
     r = cartosql.getFields('cartodb_id', table, order='{} desc'.format(time_field),
-                           f='csv', user=os.getenv('CARTO_USER'), key=os.getenv('CARTO_KEY'))
+                           f='csv', user=CARTO_USER, key=CARTO_KEY)
     # turn response into a list of strings of the ids
     ids = r.text.split('\r\n')[1:-1]
 
@@ -223,12 +223,12 @@ def deleteExcessRows(table, max_rows, time_field):
     return(num_dropped)
 
 
-def tryRetrieveData(SOURCE_URL, filename, timeout=300, encoding='utf-8'):
+def tryRetrieveData(url, filename, timeout=300, encoding='utf-8'):
     ''' 
     Download data from the source
-    INPUT   SOURCE_URL: source url to download data (string)
+    INPUT   url: source url to download data (string)
             filename: filename for source data (string)
-            TIMEOUT: how many seconds we will wait to get the data from url (integer) 
+            timeout: how many seconds we will wait to get the data from url (integer) 
             encoding: encoding of the url content (string)
     RETURN  res_rows: list of lines in the source data file (list of strings)
     '''  
@@ -237,7 +237,7 @@ def tryRetrieveData(SOURCE_URL, filename, timeout=300, encoding='utf-8'):
     # elapsed time is initialized with zero
     elapsed = 0
     # generate the url to pull data for this file
-    resource_location = os.path.join(SOURCE_URL, filename)
+    resource_location = os.path.join(url, filename)
 
     # try to fetch data from generated url while elapsed time is less than the allowed time
     while elapsed < timeout:
@@ -299,17 +299,17 @@ def insertIfNew(newUID, newValues, existing_ids, new_data):
         logging.debug("{} data already in table".format(newUID))
     return(new_data)
 
-def processData(SOURCE_URL, filename, existing_ids):
+def processData(url, filename, existing_ids):
     '''
     Fetch, process and upload new data
-    INPUT   SOURCE_URL: url where you can find the download link for the source data (string)
+    INPUT   url: url where you can find the download link for the source data (string)
             filename: filename for source data (string)
             existing_ids: list of date IDs that we already have in our Carto table (list of strings)
     RETURN  num_new: number of rows of new data sent to Carto table (integer)
     '''
     num_new = 0
     # get the data from source as a list of strings, with each string holding one line from the source data file
-    res_rows = tryRetrieveData(SOURCE_URL, filename)
+    res_rows = tryRetrieveData(url, filename)
     # create an empty dictionary to store new data (data that's not already in our Carto table)
     new_data = {}
     # go through each line of content retrieved from source
@@ -337,7 +337,7 @@ def processData(SOURCE_URL, filename, existing_ids):
         # create a list of new data
         new_data = list(new_data.values())
         # insert new data into the carto table
-        cartosql.blockInsertRows(CARTO_TABLE, CARTO_SCHEMA.keys(), CARTO_SCHEMA.values(), new_data)
+        cartosql.blockInsertRows(CARTO_TABLE, CARTO_SCHEMA.keys(), CARTO_SCHEMA.values(), new_data, user=CARTO_USER, key=CARTO_KEY)
 
     return(num_new)
 
@@ -348,7 +348,7 @@ def get_most_recent_date(table):
     RETURN  most_recent_date: most recent date of data in the Carto table, found in the TIME_FIELD column of the table (datetime object)
     '''
     # get dates in TIME_FIELD column
-    r = cartosql.getFields(TIME_FIELD, table, f='csv', post=True)
+    r = cartosql.getFields(TIME_FIELD, table, f='csv', post=True, user=CARTO_USER, key=CARTO_KEY)
     # turn the response into a list of dates
     dates = r.text.split('\r\n')[1:-1]
     # sort the dates from oldest to newest
@@ -356,18 +356,18 @@ def get_most_recent_date(table):
     # turn the last (newest) date into a datetime object
     most_recent_date = datetime.datetime.strptime(dates[-1], '%Y-%m-%d %H:%M:%S')
     return most_recent_date
+
 def updateResourceWatch(num_new):
     '''
     This function should update Resource Watch to reflect the new data.
     This may include updating the 'last update date' and updating any dates on layers
+    INPUT   num_new: number of new rows in Carto table (integer)
     '''
     # If there are new entries in the Carto table
     if num_new>0:
         # Update dataset's last update date on Resource Watch
         most_recent_date = get_most_recent_date(CARTO_TABLE)
         lastUpdateDate(DATASET_ID, most_recent_date)
-    else:
-        logging.error('No new data.')
 
     # Update the dates on layer legends - TO BE ADDED IN FUTURE
 
